@@ -1,12 +1,13 @@
-.PHONY: lib, pybind, clean, format, all
+.PHONY: lib, pybind, clean, format, all, config
 
 all: lib
 
+config: 
+	@if not exist build mkdir build
+	@cd build && cmake ..
 
 lib:
-	@mkdir -p build
-	@cd build; cmake ..
-	@cd build; $(MAKE)
+	@cd build && $(MAKE)
 
 format:
 	python3 -m black .
