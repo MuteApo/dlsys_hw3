@@ -6,6 +6,7 @@ Public repository and stub/testing code for Homework 3 of 10-714.
 - Windows 11
 - Miniconda3 (with Python 3.10.6)
 - Visual Studio 2022 (with Windows 10 SDK)
+- NVCC with CUDA 11.7
 - CMake 3.19
 
 ## Setup Configuration
@@ -21,4 +22,4 @@ Part 8: CUDA Backend - Reductions
 Part 9: CUDA Backend - Matrix multiplication
 - Phase 1: Naive version, mapping each `out[i][j]` to one thread.
 - Phase 2: Shared memory version, performing co-fetch due to locality.
-- Phase 3: Tiled version, making workload of each thread heavier by calculating `out[i:i+V][j:j+V]` together. 
+- Phase 3: Tiled version, making each thread heavier workload by calculating `out[i:i+V][j:j+V]` in one go. 

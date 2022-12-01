@@ -297,7 +297,7 @@ namespace cuda {
     KERN_EWISE_BINARY(EwiseAddKernel, a, b, out, size, LAMBDA_ADD)
     FUNC_EWISE_BINARY(EwiseAdd, a, b, out, EwiseAddKernel)
 
-    KERN_SCALAR(ScalarAddKernel, a, val, out, size, LAMBDA_MUL)
+    KERN_SCALAR(ScalarAddKernel, a, val, out, size, LAMBDA_ADD)
     FUNC_SCALAR(ScalarAdd, a, val, out, ScalarAddKernel)
 
     KERN_EWISE_BINARY(EwiseMulKernel, a, b, out, size, LAMBDA_MUL)
