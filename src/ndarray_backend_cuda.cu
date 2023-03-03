@@ -17,8 +17,12 @@ namespace cuda {
 
 #define BASE_THREAD_NUM 256
 
-#define TILE 4
-#define STRIDE 8
+#define V 6
+#define L 4
+#define S 8
+
+#define UP_DIV(x, y) ((((x) + (y)) - 1) / (y))
+
     typedef float scalar_t;
     const size_t ELEM_SIZE = sizeof(scalar_t);
     __device__ const scalar_t inf = std::numeric_limits<scalar_t>::infinity();
@@ -46,7 +50,7 @@ namespace cuda {
          * Utility function to get cuda dimensions for 1D call
          */
         CudaDims dim;
-        size_t num_blocks = (size + BASE_THREAD_NUM - 1) / BASE_THREAD_NUM;
+        size_t num_blocks = UP_DIV(size, BASE_THREAD_NUM);
         dim.block = dim3(BASE_THREAD_NUM, 1, 1);
         dim.grid = dim3(num_blocks, 1, 1);
         return dim;
@@ -57,9 +61,9 @@ namespace cuda {
          * Utility function to get cuda dimensions for 2D call
          */
         CudaDims dim;
-        size_t num_rows = (row + STRIDE * TILE - 1) / (STRIDE * TILE);
-        size_t num_cols = (col + STRIDE * TILE - 1) / (STRIDE * TILE);
-        dim.block = dim3(STRIDE, STRIDE, 1);
+        size_t num_rows = UP_DIV(row, L * V);
+        size_t num_cols = UP_DIV(col, L * V);
+        dim.block = dim3(L, L, 1);
         dim.grid = dim3(num_rows, num_cols, 1);
         return dim;
     }
@@ -353,47 +357,51 @@ namespace cuda {
                                  uint32_t M,
                                  uint32_t N,
                                  uint32_t P) {
-        __shared__ scalar_t sa[STRIDE * TILE][STRIDE * TILE];
-        __shared__ scalar_t sb[STRIDE * TILE][STRIDE * TILE];
-        scalar_t sum[TILE][TILE] = {0};
+        __shared__ scalar_t sa[L * V][L * S];
+        __shared__ scalar_t sb[L * V][L * S];
+        scalar_t sum[V][V] = {0};
 
-        size_t row = ADDR_1D(blockDim.x, blockIdx.x, threadIdx.x);
-        size_t col = ADDR_1D(blockDim.y, blockIdx.y, threadIdx.y);
-        for (size_t i = 0; i < (N + STRIDE * TILE - 1) / (STRIDE * TILE); i++) {
-            size_t col_a = ADDR_1D(STRIDE, i, threadIdx.y);
-            size_t row_b = ADDR_1D(STRIDE, i, threadIdx.x);
-            for (int j = 0; j < TILE; j++)
-                for (int k = 0; k < TILE; k++) {
-                    size_t dst_x = ADDR_1D(TILE, threadIdx.x, j);
-                    size_t dst_y = ADDR_1D(TILE, threadIdx.y, k);
+        size_t thread_x = ADDR_1D(blockDim.x, blockIdx.x, threadIdx.x);
+        size_t thread_y = ADDR_1D(blockDim.y, blockIdx.y, threadIdx.y);
+        size_t local_x = threadIdx.x;
+        size_t local_y = threadIdx.y;
+        for (size_t i = 0; i < UP_DIV(N, L * S); i++) {
+            size_t stripe_x = ADDR_1D(L, i, local_x);
+            size_t stripe_y = ADDR_1D(L, i, local_y);
+            for (size_t j = 0; j < V; j++)
+                for (size_t k = 0; k < S; k++) {
+                    size_t src_ax = ADDR_1D(V, thread_x, j);
+                    size_t src_ay = ADDR_1D(S, stripe_y, k);
+                    size_t dst_ax = ADDR_1D(V, local_x, j);
+                    size_t dst_ay = ADDR_1D(S, local_y, k);
+                    sa[dst_ax][dst_ay] = src_ax < M && src_ay < N
+                                             ? a[ADDR_1D(N, src_ax, src_ay)]
+                                             : 0;
 
-                    size_t a_x = ADDR_1D(TILE, row, j);
-                    size_t a_y = ADDR_1D(TILE, col_a, k);
-                    sa[dst_x][dst_y] =
-                        a_x < M && a_y < N ? a[ADDR_1D(N, a_x, a_y)] : 0.;
-
-                    size_t b_x = ADDR_1D(TILE, row_b, j);
-                    size_t b_y = ADDR_1D(TILE, col, k);
-                    sb[dst_y][dst_x] =
-                        b_x < N && b_y < P ? b[ADDR_1D(P, b_x, b_y)] : 0.;
+                    size_t src_bx = ADDR_1D(S, stripe_x, k);
+                    size_t src_by = ADDR_1D(V, thread_y, j);
+                    size_t dst_bx = ADDR_1D(S, local_x, k);
+                    size_t dst_by = ADDR_1D(V, local_y, j);
+                    sb[dst_by][dst_bx] = src_bx < N && src_by < P
+                                             ? b[ADDR_1D(P, src_bx, src_by)]
+                                             : 0;
                 }
 
             __syncthreads();
 
-            for (int j = 0; j < TILE; j++)
-                for (int k = 0; k < TILE; k++) {
-                    scalar_t *aa = sa[ADDR_1D(TILE, threadIdx.x, j)];
-                    scalar_t *bb = sb[ADDR_1D(TILE, threadIdx.y, k)];
-                    for (int l = 0; l < STRIDE * TILE; l++)
-                        sum[j][k] += aa[l] * bb[l];
+            for (size_t j = 0; j < V; j++)
+                for (size_t k = 0; k < V; k++) {
+                    scalar_t *pa = sa[ADDR_1D(V, threadIdx.x, j)];
+                    scalar_t *pb = sb[ADDR_1D(V, threadIdx.y, k)];
+                    for (size_t l = 0; l < L * S; l++)
+                        sum[j][k] += pa[l] * pb[l];
                 }
-            __syncthreads();
         }
 
-        for (int i = 0; i < TILE; i++)
-            for (int j = 0; j < TILE; j++) {
-                size_t x = ADDR_1D(TILE, row, i);
-                size_t y = ADDR_1D(TILE, col, j);
+        for (size_t i = 0; i < V; i++)
+            for (size_t j = 0; j < V; j++) {
+                size_t x = ADDR_1D(V, thread_x, i);
+                size_t y = ADDR_1D(V, thread_y, j);
                 if (x < M && y < P) out[ADDR_1D(P, x, y)] = sum[i][j];
             }
     }
@@ -497,7 +505,7 @@ PYBIND11_MODULE(ndarray_backend_cuda, m) {
     using namespace cuda;
 
     m.attr("__device_name__") = "cuda";
-    m.attr("__tile_size__") = TILE;
+    m.attr("__tile_size__") = V;
 
     py::class_<CudaArray>(m, "Array")
         .def(py::init<size_t>(), py::return_value_policy::take_ownership)

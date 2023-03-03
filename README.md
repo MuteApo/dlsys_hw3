@@ -12,14 +12,14 @@ Public repository and stub/testing code for Homework 3 of 10-714.
 ## Setup Configuration
 
 - `VERSION` specified in `cmake_minimum_required()` will definitely affect how CMake performs (in order to be compatible to older versions). `VERSION=3.4/3.12` cannot properly detect my conda env (with Python 3.10.6) and falls back to the global python (version 3.9.12) executable.
-- `python3-config` is not found in my laptop, so I have to explicitly add path of `python310.lib` to CMake `LINKER_LIBS`.
+- `python3-config` cannot be found on my laptop, so I have to explicitly add path of `python310.lib` to CMake `LINKER_LIBS`.
 
 ## Hints
 
 Part 8: CUDA Backend - Reductions
-- `thrust::reduce` may be helpful to implement reduce kernel on `__device__` side.
+- `thrust` library (CUDA STL) may be helpful to implement reduce kernel on `__device__` side.
 
 Part 9: CUDA Backend - Matrix multiplication
 - Phase 1: Naive version, mapping each `out[i][j]` to one thread.
-- Phase 2: Shared memory version, performing co-fetch due to locality.
-- Phase 3: Tiled version, making each thread heavier workload by calculating `out[i:i+V][j:j+V]` in one go. 
+- Phase 2: Tiled version, each thread calculates `out[i:i+V][j:j+V]` (in total $V\times V$ items). 
+- Phase 3: Shared memory version, $L\times L$ threads in one block perform co-fetch due to space locality.
